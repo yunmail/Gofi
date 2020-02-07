@@ -1,13 +1,13 @@
-package context
+package environment
 
 import (
+	"context"
 	"flag"
 	"fmt"
-	"github.com/go-xorm/xorm"
+	"gofi/ent"
 	//import sqlite3 driver
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sirupsen/logrus"
-	"gofi/models"
 	"net"
 	"os"
 	"path/filepath"
@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-//version ,will be replaced at compile time by [-ldflags="-X 'gofi/context.Version=vX.X.X'"]
+//version ,will be replaced at compile time by [-ldflags="-X 'gofi/environment.Version=vX.X.X'"]
 var version string = "UNKOWN VERSION"
 
 const (
@@ -25,8 +25,8 @@ const (
 	ipUsage     = "server side ip for web client to request,default is lan ip"
 )
 
-//Context 上下文对象
-type Context struct {
+//Environment 上下文对象
+type Environment struct {
 	Version           string
 	Port              string
 	DatabaseName      string
@@ -38,11 +38,11 @@ type Context struct {
 	CustomStorageDir  string
 	LogDir            string
 	DatabaseFilePath  string
-	Orm               *xorm.Engine
-	settings          *models.Settings
+	OrmClient         *ent.Client
+	configuration     *ent.Configuration
 }
 
-var instance = new(Context)
+var instance = new(Environment)
 var isFlagBind = false
 
 func init() {
@@ -74,9 +74,9 @@ func InitContext() {
 		instance.ServerIP = instance.GetLanIP()
 	}
 	instance.ServerAddress = instance.ServerIP + ":" + instance.Port
-	instance.Orm = instance.initDatabase()
-	instance.settings = instance.queryAppSettings()
-	instance.CustomStorageDir = instance.settings.CustomStoragePath
+	instance.OrmClient = instance.initDatabase()
+	instance.configuration = instance.queryConfiguration()
+	instance.CustomStorageDir = instance.configuration.CustomStoragePath
 }
 
 //CheckIP 校验IP是否有效
@@ -85,82 +85,100 @@ func CheckIP(ip string) bool {
 }
 
 //Get 返回当前Context实例
-func Get() *Context {
+func Get() *Environment {
 	return instance
 }
 
-//GetSettings 获取当前设置项
-func (context *Context) GetSettings() models.Settings {
-	return *context.settings
+//GetConfiguration 获取当前设置项
+func (environment *Environment) GetConfiguration() *ent.Configuration {
+
+	if environment.configuration != nil {
+		// 动态字段赋值
+		environment.configuration.Version = environment.Version
+		environment.configuration.AppPath = environment.WorkDir
+		environment.configuration.DefStoragePath = environment.DefaultStorageDir
+	}
+
+	return environment.configuration
+}
+
+func (environment *Environment) SetConfiguration(configuration *ent.Configuration) {
+	if configuration == nil {
+		return
+	}
+
+	// 动态字段赋值
+	environment.configuration.Version = environment.Version
+	environment.configuration.AppPath = environment.WorkDir
+	environment.configuration.DefStoragePath = environment.DefaultStorageDir
+
+	environment.configuration = configuration
 }
 
 //GetStorageDir 获取当前仓储目录
-func (context *Context) GetStorageDir() string {
-	if len(context.CustomStorageDir) == 0 {
-		return context.DefaultStorageDir
+func (environment *Environment) GetStorageDir() string {
+	if len(environment.CustomStorageDir) == 0 {
+		return environment.DefaultStorageDir
 	}
-	return context.CustomStorageDir
+	return environment.CustomStorageDir
 }
 
-func (context *Context) initDatabase() *xorm.Engine {
+func (environment *Environment) initDatabase() *ent.Client {
 	// connect to database
-	engine, err := xorm.NewEngine("sqlite3", context.DatabaseFilePath)
+	client, err := ent.Open("sqlite3", "file:"+environment.DatabaseFilePath+"?cache=shared&_fk=1")
 	if err != nil {
 		logrus.Println(err)
 		panic("failed to connect database")
 	}
 
-	if context.IsTestEnvironment() {
-		logrus.Info("on environment,skip database sync")
+	if environment.IsTestEnvironment() {
+		logrus.Info("on environment,skip database migrate")
 	} else {
+		// fixme https://github.com/facebookincubator/ent/pull/221# sqlite3 panic bug
 		// migrate database
-		if err := engine.Sync2(new(models.Settings)); err != nil {
-			logrus.Error(err)
+		if err := client.Schema.Create(context.Background(), ); err != nil {
+			logrus.Fatalf("failed creating schema resources: %v", err)
 		}
 	}
 
-	return engine
+	return client
 }
 
-func (context *Context) queryAppSettings() *models.Settings {
-	var pSettings = new(models.Settings)
+func (environment *Environment) queryConfiguration() *ent.Configuration {
+	var configuration *ent.Configuration
+	var err error
 	//obtain first record
-	if has, _ := context.Orm.Get(pSettings); !has {
-		//create new record if there is no record exist
-		pSettings = &models.Settings{
-			AppPath:            context.WorkDir,
-			Initialized:        false,
-			CustomStoragePath:  "",
-			DefaultStoragePath: context.DefaultStorageDir,
-			DatabaseFilePath:   context.DatabaseFilePath,
-			LogDirectoryPath:   context.LogDir,
-			DefaultLanguage:    "zh-CN",
-			ThemeStyle:         "light", // light or dark
-			ThemeColor:         "#1890FF",
-			NavMode:            "top", // top or side
-			Created:            time.Time{},
-			Updated:            time.Time{},
-		}
+	configuration, err = environment.OrmClient.Configuration.Query().Only(context.Background())
 
-		if _, err := context.Orm.InsertOne(pSettings); err != nil {
+	if err != nil {
+		//create new record if there is no record exist
+		configuration, err = environment.OrmClient.Configuration.
+			Create().
+			SetInitialized(false).
+			SetDatabaseFilePath(environment.DatabaseFilePath).
+			SetLogDirectoryPath(environment.LogDir).
+			SetThemeStyle("light").
+			SetThemeColor("#1890FF").
+			SetNavMode("top").
+			SetCreated(time.Time{}).
+			SetUpdated(time.Time{}).
+			Save(context.Background())
+
+		if err != nil {
 			logrus.Error(err)
 		}
 	}
 
-	pSettings.Version = context.Version
+	// 动态字段赋值
+	configuration.Version = environment.Version
+	configuration.AppPath = environment.WorkDir
+	configuration.DefStoragePath = environment.DefaultStorageDir
 
-	return pSettings
-}
-
-//AfterUpdateSettings 设置更新后，需要更新Context上下文中的文件仓储路径
-func (context *Context) AfterUpdateSettings(bean interface{}) {
-	context.settings = bean.(*models.Settings)
-	context.CustomStorageDir = context.settings.CustomStoragePath
-	logrus.Infof("AfterUpdateSettings current storage dir is %s", context.settings.CustomStoragePath)
+	return configuration
 }
 
 //IsTestEnvironment 当前是否测试环境
-func (context *Context) IsTestEnvironment() bool {
+func (environment *Environment) IsTestEnvironment() bool {
 	for _, value := range os.Args {
 		if strings.Contains(value, "-test.v") {
 			return true
@@ -170,7 +188,7 @@ func (context *Context) IsTestEnvironment() bool {
 }
 
 //getWorkDirectoryPath 获取工作目录
-func (context *Context) getWorkDirectoryPath() string {
+func (environment *Environment) getWorkDirectoryPath() string {
 	dir, err := os.Getwd()
 	if err != nil {
 		return ""
@@ -179,14 +197,13 @@ func (context *Context) getWorkDirectoryPath() string {
 }
 
 //GetLanIP 返回本地ip
-func (context *Context) GetLanIP() string {
+func (environment *Environment) GetLanIP() string {
 	addresses, err := net.InterfaceAddrs()
 
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-
 
 	logrus.Infof("print all ip address: %v\n\t", addresses)
 

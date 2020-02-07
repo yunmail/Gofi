@@ -10,9 +10,9 @@ import (
 	"github.com/kataras/iris/middleware/recover"
 	"github.com/sirupsen/logrus"
 	"gofi/binary"
-	"gofi/context"
 	"gofi/controllers"
 	"gofi/env"
+	"gofi/environment"
 	"gofi/extension"
 	"gofi/middleware"
 	"gofi/util"
@@ -20,13 +20,13 @@ import (
 
 func init() {
 	extension.InitAdditionalExtensionType()
-	context.InitContext()
+	environment.InitContext()
 }
 
 func main() {
-	logrus.Infof("Gofi is running on %v，current environment is %s,version is %s\n", context.Get().ServerAddress, env.Current(), context.Get().Version)
+	logrus.Infof("Gofi is running on %v，current environment is %s,version is %s\n", environment.Get().ServerAddress, env.Current(), environment.Get().Version)
 	app := newApp()
-	_ = app.Run(iris.Addr(":"+context.Get().Port), iris.WithoutServerError(iris.ErrServerClosed))
+	_ = app.Run(iris.Addr(":"+environment.Get().Port), iris.WithoutServerError(iris.ErrServerClosed))
 }
 
 func newApp() (app *iris.Application) {
@@ -85,7 +85,7 @@ func api(app *iris.Application) {
 		}
 	}).AllowMethods(iris.MethodOptions)
 	{
-		api.Get("/setting", controllers.GetSetting)
+		api.Get("/setting", controllers.GetConfiguration)
 		api.Post("/setting", controllers.UpdateSetting)
 		api.Post("/setup", controllers.Setup)
 		api.Get("/files", controllers.ListFiles)

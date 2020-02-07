@@ -1,7 +1,7 @@
 package test
 
 import (
-	"gofi/context"
+	"gofi/environment"
 	"os"
 	"testing"
 )

@@ -3,9 +3,9 @@ package controllers
 import (
 	"github.com/kataras/iris"
 	"github.com/sirupsen/logrus"
-	"gofi/context"
+	"gofi/ent"
+	"gofi/environment"
 	"gofi/i18n"
-	"gofi/models"
 	"gofi/util"
 	"io/ioutil"
 	"mime"
@@ -18,7 +18,7 @@ func FileDetail(ctx iris.Context) {
 	// 需要列出文件的文件夹地址相对路径
 	relativePath := ctx.URLParamDefault("path", "")
 
-	storagePath := context.Get().GetStorageDir()
+	storagePath := environment.Get().GetStorageDir()
 
 	logrus.Printf("root path is %v \n", storagePath)
 
@@ -53,7 +53,7 @@ func FileDetail(ctx iris.Context) {
 	}
 
 	// 实例化File model
-	file := models.File{
+	file := ent.File{
 		IsDirectory:  fileInfo.IsDir(),
 		Name:         fileInfo.Name(),
 		Size:         int(fileInfo.Size()),
@@ -74,7 +74,7 @@ func ListFiles(ctx iris.Context) {
 	// 需要列出文件的文件夹地址相对路径
 	relativePath := ctx.URLParamDefault("path", "")
 
-	storageDir := context.Get().GetStorageDir()
+	storageDir := environment.Get().GetStorageDir()
 
 	logrus.Printf("root path is %v \n", storageDir)
 
@@ -105,7 +105,7 @@ func ListFiles(ctx iris.Context) {
 		return
 	}
 
-	var filesOfDir []models.File
+	var filesOfDir []ent.File
 
 	// 将所有文件再次封装成客户端需要的数据格式
 	for _, fileInfo := range fileInfos {
@@ -116,7 +116,7 @@ func ListFiles(ctx iris.Context) {
 		}
 
 		// 实例化File model
-		file := models.File{
+		file := ent.File{
 			IsDirectory:  fileInfo.IsDir(),
 			Name:         fileInfo.Name(),
 			Size:         int(fileInfo.Size()),
@@ -142,7 +142,7 @@ func Upload(ctx iris.Context) {
 
 	logrus.Infof("relativePath path is %v \n", relativePath)
 
-	storageDir := context.Get().GetStorageDir()
+	storageDir := environment.Get().GetStorageDir()
 
 	logrus.Infof("root path is %v \n", storageDir)
 
@@ -192,7 +192,7 @@ func Download(ctx iris.Context) {
 	relativePath := ctx.URLParamDefault("path", "")
 	raw := ctx.URLParamExists("raw") && ctx.URLParam("raw") == "true"
 
-	storageDir := context.Get().GetStorageDir()
+	storageDir := environment.Get().GetStorageDir()
 
 	path := filepath.Join(storageDir, relativePath)
 
