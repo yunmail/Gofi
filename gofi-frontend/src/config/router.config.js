@@ -2,6 +2,7 @@ import { BasicLayout, UserLayout } from '@/layouts'
 import FileList from '@/views/disk/FileList'
 import config from '@/config/defaultSettings'
 import FileDetail from '@/views/disk/preview/FilePreview'
+import store from '@/store'
 
 /**
  * 基础路由
@@ -38,9 +39,20 @@ const basicRoutes = [
         name: 'setting',
         component: () => import('@/views/settings/Index'),
         meta: { title: 'menu.setting', icon: 'setting' },
-        redirect: { name: 'base-setting' },
+        redirect: () => {
+          if (!store.getters.isLogin) {
+            return { name: 'login' }
+          }
+          return store.getters.isAdmin ? { name: 'base-setting' } : { name: 'account-setting' }
+        },
         hideChildrenInMenu: true,
         children: [
+          {
+            path: 'account',
+            name: 'account-setting',
+            component: () => import('@/views/settings/Account'),
+            meta: { title: 'setting.accountSetting' }
+          },
           {
             path: 'base',
             name: 'base-setting',

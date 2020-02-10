@@ -6,12 +6,25 @@ import '@/components/NProgress/nprogress.less' // progress bar custom style
 import notification from 'ant-design-vue/es/notification'
 import { defaultValue } from '@/utils/util'
 import config from '@/config/defaultSettings'
+import { message } from 'ant-design-vue'
+import i18n from '@/locales'
 
 NProgress.configure({ showSpinner: false })
 
 router.beforeEach((to, from, next) => {
   NProgress.start() // start progress bar
-  fetchSettingsIfNotExist(next, to)
+  if (to.matched.some(record => record.meta.requireAuth)) {
+    // this route requires auth, check if logged in
+    // if not, redirect to login page.
+    if (!store.getters.isLogin) {
+      message.warn(i18n.t('auth.requireAuth.content'))
+      next({ name: 'login' })
+    } else {
+      fetchConfigurationIfNotExist(next, to)
+    }
+  } else {
+    fetchConfigurationIfNotExist(next, to)
+  }
 })
 
 router.afterEach(() => {
@@ -37,14 +50,14 @@ function setupOrNext (next, to) {
   }
 }
 
-function applySettingFromServer (configuration) {
+function applyConfigurationFromServer (configuration) {
   store.commit('TOGGLE_THEME',
     defaultValue(configuration.themeStyle, config.navTheme))
   store.commit('TOGGLE_NAV_MODE',
     defaultValue(configuration.navMode, config.navMode))
 }
 
-function fetchSettingsIfNotExist (next, to) {
+function fetchConfigurationIfNotExist (next, to) {
   if (store.getters.configurationValid) {
     console.log('configuration valid')
     setupOrNext(next, to)
@@ -54,7 +67,7 @@ function fetchSettingsIfNotExist (next, to) {
     store.dispatch('GetConfiguration')
       .then((data) => {
         setupOrNext(next, to)
-        applySettingFromServer(data)
+        applyConfigurationFromServer(data)
       })
       .catch((e) => {
         notification.error({
